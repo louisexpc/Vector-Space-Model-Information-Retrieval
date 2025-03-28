@@ -1,5 +1,5 @@
-./CIRB010
-./model
-./queries
+CIRB010/
+model/
+queries/
 *.csv
 *.pdf
