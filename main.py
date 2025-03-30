@@ -4,6 +4,20 @@ from pathlib import Path
 from query import Query
 from similarity import concept_tokenize,cosine_similarity_sparse
 from vsm_model import VSM
+import pandas as pd
+
+def generate_ranked_list(query_ids: list, retrieved_docs: list, path: str):
+    if len(query_ids) != len(retrieved_docs):
+        print(f"The length of query_ids and retrieved_docs doesn't match, output file failed")
+        return
+    
+    df = pd.DataFrame({"query_id": query_ids, "retrieved_docs": retrieved_docs})
+    
+    try:
+        df.to_csv(path, index=False)
+    except Exception as e:
+        raise ValueError(f"Can't save ranked file at {path}: {e}")
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-r",action="store_true",help="Enable relevance feedback")
@@ -16,16 +30,27 @@ def main():
     
     model = VSM(args.m)
     q = Query(args.i)
-    top_k = 10
-    for topic in q.topics[0:1]:
+    top_k = 50
+
+    retrieved_docs = []
+    for topic in q.topics:
         q_vec = concept_tokenize(topic['concepts'],model.term_to_index, model.idf_vector)
         similarities = cosine_similarity_sparse(q_vec,model.tfidf_matrix)
         top_indices = similarities.argsort()[::-1][:top_k]
+        """
+        feedback
+        """
+        docs_string =""
         for rank, idx in enumerate(top_indices, start=1):
             sim_score = similarities[idx]
             if sim_score == 0:
-                continue  
-            print(f"{rank}. 檔案名稱：{model.file_names[idx]}，相似度：{sim_score:.4f}")
+                continue 
+            file_name =  model.file_names[idx].split("/")[-1].lower()
+            print(f"{rank}. 檔案名稱：{file_name}，相似度：{sim_score:.4f}")
+            docs_string+= (file_name+" ")
+        retrieved_docs.append(docs_string.strip())
+
+    generate_ranked_list(q.query_ids,retrieved_docs,args.o)
 
 
 if __name__=="__main__":
