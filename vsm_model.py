@@ -30,7 +30,10 @@ class VSM:
         self.output_tf_idf_file = os.path.join(model_dir,"tf_idf.npz")
         self.output_term_to_index_file = os.path.join(model_dir,"term_to_index.pkl")
         self.output_idf_vector_file = os.path.join(model_dir,"idf_vector.npy")
-        
+        self.output_docs_length = os.path.join(model_dir,"docs_lengths.npy")
+        self.output_df = os.path.join(model_dir,"df.npy")
+        self.output_doc_term_freqs = os.path.join(model_dir,"doc_term_freq.pkl")
+
         #Validation model files
         if not os.path.exists(self.inverted_file):
             raise ValueError(f"Inverted file 不存在，請檢查文件路徑是否在 {self.inverted_file}")
@@ -44,13 +47,19 @@ class VSM:
         if not os.path.exists(self.output_files_file) or \
             not os.path.exists(self.output_tf_idf_file) or \
             not os.path.exists(self.output_term_to_index_file) or \
-            not os.path.exists(self.output_idf_vector_file):
+            not os.path.exists(self.output_idf_vector_file) or \
+            not os.path.exists(self.output_docs_length) or \
+            not os.path.exists(self.output_df) or \
+            not os.path.exists(self.output_doc_term_freqs):
             #Renerate necessacry files
             self.term_to_index,\
             self.idf_vector,\
             self.file_names,\
-            self.tfidf_matrix\
-             =self._load_model()
+            self.tfidf_matrix,\
+            self.df, \
+            self.docs_length, \
+            self.doc_term_freqs \
+            =self._load_model()
         
         else:
             print(f"files exist, loading")
@@ -58,6 +67,9 @@ class VSM:
             self.idf_vector = self._load_npy(self.output_idf_vector_file)
             self.file_names = self._load_npy(self.output_files_file)
             self.tfidf_matrix = self._load_npz(self.output_tf_idf_file)
+            self.df = self._load_npy(self.output_df)
+            self.docs_length = self._load_npy(self.output_docs_length)
+            self.doc_term_freqs = self._load_pickle(self.output_doc_term_freqs)
 
         self._initialized = True
     def _load_pickle(self,path):
@@ -166,7 +178,18 @@ class VSM:
             np.save(self.output_idf_vector_file, idf)
         except Exception as e:
             print(f"Save file error: {e}")
-        return term_to_index,idf,file_list,tf_idf_matrix
+        
+        """add: compute docs_length(BM25)"""
+        doc_lengths = [sum(term_freqs.values()) for term_freqs in doc_term_freqs]
+        try:
+            np.save(self.output_docs_length,np.array(doc_lengths))
+            np.save(self.output_df,np.array(df))
+            with open(self.output_doc_term_freqs, "wb") as f:
+                pickle.dump(doc_term_freqs, f)
+        except Exception as e:
+            print(f"Save file error: {e}")
+        return term_to_index,idf,file_list,tf_idf_matrix,df,doc_lengths,doc_term_freqs
 
 if __name__=="__main__":
-    model = VSM("model")
+    vsm = VSM("model")
+    print(len(vsm.term_to_index))

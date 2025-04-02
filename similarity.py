@@ -46,3 +46,64 @@ def cosine_similarity_sparse(q_vec, tfidf_matrix):
     similarities = dot_products / (doc_norms * q_norm + epsilon)
 
     return similarities
+
+def tokenize(concepts:list , term_to_index:dict):
+    """
+    將 concept 的 key word 做 term to index 的mapping
+    Steps: For concept key words :[流浪狗、流浪犬、動物保護、動保法、保育、人道]
+    - 提取 unigram and bigram，並去除重複的gram
+    - 轉換成 qurey term to index
+
+    Returns:
+        List[int] - 查詢詞對應的 index 列表
+    """
+    query_terms = []
+    for keyword in concepts:
+        # unigram
+        query_terms.extend(keyword)  # 等同於逐字加入
+        # bigram
+        query_terms.extend([keyword[i] + "_" + keyword[i+1] for i in range(len(keyword) - 1)])
+
+    
+    query_terms = list(set(query_terms))
+
+    query_term_indices = [term_to_index[w] for w in query_terms if w in term_to_index]
+    return query_term_indices
+    
+
+
+
+def compute_BM25(query_term_indices: list, idf: np.array, docs_length: list, doc_term_freqs: list, K1: float, b: float) -> np.array:
+    """
+    Parameters:
+    - query_term_indices: 查詢詞對應的 index 列表
+    - idf: smooth document frequency (term_i 總共出現在多少個 docs)
+    - docs_length: the lengths of each doc
+    - doc_term_freqs: list(dict)
+    - k1: BM25 參數
+    - b: BM25 參數
+
+    Return:
+    - bm25_score
+    """
+    N = len(docs_length)
+    avgDL = sum(docs_length) / N
+    scores = np.zeros(N, dtype=np.float32)
+
+    for doc_id in range(N):
+        doc_len = docs_length[doc_id]
+        term_freq_dict = doc_term_freqs[doc_id]
+        for term_idx in query_term_indices:
+            f = term_freq_dict.get(term_idx, 0)
+            if f == 0:
+                continue
+            const = K1 * (1 - b + b * doc_len / avgDL)
+            score = idf[term_idx] * f * (K1 + 1) / (f + const)
+            scores[doc_id] += score
+
+    return scores
+
+    pass
+
+if __name__=="__main__":
+    compute_BM25()
