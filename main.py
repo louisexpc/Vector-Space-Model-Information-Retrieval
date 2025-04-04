@@ -1,13 +1,16 @@
 import argparse
 import os
 from pathlib import Path
-from query import Query
-from similarity import concept_tokenize,cosine_similarity_sparse,tokenize,compute_BM25
-from vsm_model import VSM
 from scipy.sparse import lil_matrix, csr_matrix
 import pandas as pd
 import numpy as np
 from collections import Counter
+import time
+
+from query import Query
+from score import query_vector_transformation,compute_cosine_similarity,query_term_indices_transformation,compute_BM25
+from vsm_model import VSM
+
 
 def generate_ranked_list(query_ids: list, retrieved_docs: list, path: str):
     if len(query_ids) != len(retrieved_docs):
@@ -37,7 +40,7 @@ def retrieve(score:np.array,top_k:int, file_names)->list:
         if sim_score == 0:
             continue 
         file_name =  file_names[idx].split("/")[-1].lower()
-        print(f"{rank}. 檔案名稱：{file_name}，相似度：{sim_score:.4f}")
+        #print(f"{rank}. file name：{file_name} ; score：{sim_score:.4f}")
         docs_string+= (file_name+" ")
     return docs_string
 
@@ -56,7 +59,7 @@ def pseudo_rocchio_feedback(q_vec , tfidf_matrix, alpha=1.0, beta=0.75, top_k=10
 
     """
     tfidf_matrix = tfidf_matrix.tocsr()
-    similarities = cosine_similarity_sparse(q_vec,tfidf_matrix)
+    similarities = compute_cosine_similarity(q_vec,tfidf_matrix)
 
     top_k_indices = similarities.argsort()[::-1][:top_k]
     centroid = tfidf_matrix[top_k_indices].mean(axis = 0)
@@ -69,7 +72,7 @@ def pseudo_rocchio_feedback(q_vec , tfidf_matrix, alpha=1.0, beta=0.75, top_k=10
 
     return new_q_vec
 
-def pseudo_bm25_query_extension(query_term_indices: list, idf: np.array, docs_length: list, doc_term_freqs: list, K1: float, b: float,top_k:int = 10,expand_n:int=5):
+def pseudo_bm25_query_extension(query_term_indices: list, idf: np.array, docs_length: list, doc_term_freqs: list, K1: float, b: float,top_k:int = 10,expand_n:int=10):
     bm25_score = compute_BM25(query_term_indices,idf,docs_length,doc_term_freqs,K1,b)
     top_k_indices = bm25_score.argsort()[::-1][:top_k]
 
@@ -106,31 +109,55 @@ def main():
     K1 = 1.2
     b = 0.75
     retrieved_docs = []
+
+    print(f"Start Retrieve")
+    if args.b:
+        print(f"Evaluation Score : BM25")
+    else:
+        print(f"Evaluation Score : Cosine Similarity")
+    if args.r:
+        print(f"PRF : Yes")
+    else:
+        print(f"PRF: NO")
+    total_execution_time = 0.0
     for topic in q.topics:
+        print(f"Query :{topic['question']}")
+        start = time.time()
+        
+        query_input = topic['concepts']+[topic['title']]+[topic['question'].strip('。')]
+        
         if not args.b:
             """Similarity"""
-            print("Using Similarity")
-            q_vec = concept_tokenize(topic['concepts'],model.term_to_index, model.idf_vector)
+            
+            q_vec = query_vector_transformation(query_input,model.term_to_index, model.idf_vector)
             if args.r:
                 new_q_vec = pseudo_rocchio_feedback(q_vec,model.tfidf_matrix)
             else:
                 new_q_vec = q_vec
-            similarities = cosine_similarity_sparse(new_q_vec,model.tfidf_matrix)
+            similarities = compute_cosine_similarity(new_q_vec,model.tfidf_matrix)
             docs_string = retrieve(similarities,top_k,model.file_names)
         else:
             """BM25"""
-            print("Using BM25")
-            query_term_indices = tokenize(topic['concepts'],model.term_to_index)
+            
+            query_term_indices = query_term_indices_transformation(query_input,model.term_to_index)
+
             if args.r:
                 new_query_term_indices = pseudo_bm25_query_extension(query_term_indices,model.idf_vector,model.docs_length,model.doc_term_freqs,K1,b)
             else:
                 new_query_term_indices=query_term_indices
+
             bm25_score = compute_BM25(new_query_term_indices,model.idf_vector,model.docs_length,model.doc_term_freqs,K1,b)
             docs_string = retrieve(bm25_score,top_k,model.file_names)
 
         retrieved_docs.append(docs_string.strip())
+        total_execution_time += time.time()-start
+        print(f"Down, retrieve time: {(time.time() - start):.4f}s\n")
+
+
+
 
     generate_ranked_list(q.query_ids,retrieved_docs,args.o)
+    print(f"End of Retrieve, retrieve time: {total_execution_time:.4f}s\noutput is saved at {args.o}")
 
 
 if __name__=="__main__":
